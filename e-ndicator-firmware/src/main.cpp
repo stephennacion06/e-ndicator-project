@@ -1,30 +1,12 @@
 #include <Arduino.h>
 #include <String.h>
-#include <SimpleKalmanFilter.h>
-#include <SoftwareSerial.h>
 #include <SPI.h>
 #include <Wire.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SSD1306.h>
 #include "user.h"
 #include "sim800l_interface.h"
-
-//VOLTAGE AND CURRENT
-float r1 = 100000;
-float r2 = 5000;
-float voltage_value = 0;
-float ADC_VALUE;
-const long SERIAL_REFRESH_TIME = 100;
-long refresh_time;
-SimpleKalmanFilter simpleKalmanFilter_voltage(2, 2, 0.1);
-SimpleKalmanFilter simpleKalmanFilter_current(2, 2, 0.01);
-const int sensorIn = 35;      // pin where the OUT pin from sensor is connected on Arduino
-int mVperAmp = 185;           // this the 5A version of the ACS712 -use 100 for 20A Module and 66 for 30A Module
-int Watt = 0;
-double Voltage = 0;
-double VRMS = 0;
-double AmpsRMS = 0;
-float current;
+#include "sensors.h"
 
 // SOC PARAMETERS
 float coulomb_count = 0; // A
@@ -62,11 +44,7 @@ unsigned long debounceDelay = 100;    // the debounce time; increase if the outp
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
 void ir_setup();
-float get_voltage();
-float get_current();
-float getVPP();
-float get_current_2();
-float getVPP_2();
+float sensors_getCurrent();
 int determine_battery_type(float voltage);
 void AllPixels();
 void TextDisplay();
@@ -77,8 +55,8 @@ void IR_value(float ir);
 void Display_parameters(float voltage, float current, float test,  float battery_soh);
 void ir_setup_display(float ocv, float vbat, float cbat);
 
-void setup() {
-
+void setup()
+{
   Serial.begin(9600);
 
   if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
@@ -116,25 +94,26 @@ void setup() {
 void loop()
 {
 
-  //get voltage
-  float voltage = get_voltage();
-  if (voltage < 4)
+  //get Voltage
+  float voltageReading = sensors_getVoltage();
+  //get Current
+  float currentReading = sensors_getCurrent_2();
+
+  if (voltageReading < 4)
   {
-    voltage = 0;
+    voltageReading = 0;
   }
-  //get current
-  current = get_current_2();
 
   //compute SOC
-  battery_soc = last_soc  + charge_state*(current/battery_capacity)*0.000277778*100 + getSocCalibration();
+  battery_soc = last_soc  + charge_state*( currentReading / battery_capacity )*0.000277778*100 + getSocCalibration();
 
   //compute SOH
   reol = (165*rinit)/100;
   battery_soh = (ocv - vbat)/(reol*cbat)*100 + getSohCalibration();
 
 
- Display_parameters(voltage,current, battery_soc,battery_soh);
- transmit_to_server( USER_ID,voltage,current, battery_soh, battery_soc, internal_resistance );
+  Display_parameters( voltageReading, currentReading , battery_soc,battery_soh);
+  transmit_to_server( USER_ID, voltageReading, currentReading, battery_soh, battery_soc, internal_resistance );
 
 
 }
@@ -154,7 +133,7 @@ void ir_setup()
           if ((millis() - lastDebounceTime) > debounceDelay) {
             ledState = false;
           }
-          ocv = get_voltage();
+          ocv = sensors_getVoltage();
           
          
           if (ocv < 4){
@@ -181,8 +160,8 @@ void ir_setup()
   while (ledState) 
   {
   touch_pin = touchRead(T3);
-  vbat = get_voltage();
-  cbat = get_current();
+  vbat = sensors_getVoltage();
+  cbat = sensors_getCurrent();
 
            if (touch_pin > touch_threshold) {
             lastDebounceTime = millis();
@@ -218,102 +197,7 @@ void ir_setup()
   IR_value(internal_resistance);
 }
 
-float get_voltage()
-{
-    
-ADC_VALUE = analogRead(34);
- voltage_value = ((ADC_VALUE * 3.3 ) / (4095))
-                  /
-                 (r2/(r1+r2));
- float estimated_value = simpleKalmanFilter_voltage.updateEstimate(voltage_value);
- return estimated_value + getVoltageCalibration();
-}
-
-float get_current()
-{
-//  float I = sensor.getCurrentDC();
-  Voltage = getVPP();
-  VRMS = (Voltage/2.0) *0.707;   //root 2 is 0.707
-  AmpsRMS = ((VRMS * 1000)/mVperAmp)-0.25; //0.3 is the error I got for my sensor
-  float estimated_value = simpleKalmanFilter_current.updateEstimate(AmpsRMS);
-  return estimated_value + getCurrentCalibration();
-}
-float getVPP()
-{
-  float result;
-  int readValue;                // value read from the sensor
-  int maxValue = 0;             // store max value here
-  int minValue = 4096;          // store min value here ESP32 ADC resolution
-  
-   uint32_t start_time = millis();
-
-     while((millis()-start_time) < 700) //sample for 700 mSec
-   {
-       readValue = analogRead(sensorIn);
-       // see if you have a new maxValue
-       if (readValue > maxValue) 
-       {
-           /*record the maximum sensor value*/
-           maxValue = readValue;
-       }
-       if (readValue < minValue) 
-       {
-           /*record the minimum sensor value*/
-           minValue = readValue;
-       }
-   }
-   
-   
-   // Subtract min from max
-   result = ((maxValue - minValue) * 5)/4096.0; //ESP32 ADC resolution 4096
-      
-   return result;
- }
-
-float get_current_2()
-{
-//  float I = sensor.getCurrentDC();
-  Voltage = getVPP_2();
-  VRMS = (Voltage/2.0) *0.707;   //root 2 is 0.707
-  AmpsRMS = ((VRMS * 1000)/mVperAmp)-0.25; //0.3 is the error I got for my sensor
-  float estimated_value = simpleKalmanFilter_current.updateEstimate(AmpsRMS);
-  return estimated_value + getCurrentCalibration();
-}
-
-float getVPP_2()
-{
-  float result;
-  int readValue;                // value read from the sensor
-  int maxValue = 0;             // store max value here
-  int minValue = 4096;          // store min value here ESP32 ADC resolution
-  
-   uint32_t start_time = millis();
-
-     while((millis()-start_time) < 10) //sample for 700 mSec
-   {
-       readValue = analogRead(sensorIn);
-       // see if you have a new maxValue
-       if (readValue > maxValue) 
-       {
-           /*record the maximum sensor value*/
-           maxValue = readValue;
-       }
-       if (readValue < minValue) 
-       {
-           /*record the minimum sensor value*/
-           minValue = readValue;
-       }
-   }
-   
-   
-   // Subtract min from max
-   result = ((maxValue - minValue) * 5)/4096.0; //ESP32 ADC resolution 4096
-      
-   return result;
- }
-
-
- int determine_battery_type(float voltage){
+int determine_battery_type(float voltage){
 
 float updated_soc;
   if(voltage <= 14.4){
@@ -523,7 +407,7 @@ void ir_setup_display(float ocv, float vbat, float cbat)
   display.println(F(" V"));
 
 
-   display.print(F("CBAT: "));
+  display.print(F("CBAT: "));
   display.print(cbat);
   display.println(F(" A"));
 
