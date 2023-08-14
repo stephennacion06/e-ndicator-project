@@ -1,35 +1,15 @@
-//SIM800l
-int user = 1;//KEVIN USER
-#include <SoftwareSerial.h>
-SoftwareSerial gprsSerial(27,26);
+#include <Arduino.h>
 #include <String.h>
-#define delay_sms 100
-#define INTERVAL_MESSAGE1 100
-#define INTERVAL_MESSAGE2 1100
-unsigned long time_1 = 0;
-unsigned long time_2 = 0;
-int position_1 = 0;
-
-
-#define INTERVAL_MESSAGE1_DOWNLOAD 1000
-#define INTERVAL_MESSAGE2_DOWNLOAD 1100
-unsigned long time_1_DOWNLOAD = 0;
-unsigned long time_2_DOWNLOAD = 0;
-int position_1_DOWNLOAD = 0;
-
-const char start_char = '[';
-const char end_char = ']';
-const char del[] = "[],"; //Delimiters
-float voltage_cal = 0;
-float current_cal = 0;
-float SOH_cal = 0;
-float SOC_cal = 0;
-
-
-
+#include <SimpleKalmanFilter.h>
+#include <SoftwareSerial.h>
+#include <SPI.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+#include "user.h"
+#include "sim800l_interface.h"
 
 //VOLTAGE AND CURRENT
-#include <SimpleKalmanFilter.h>
 float r1 = 100000;
 float r2 = 5000;
 float voltage_value = 0;
@@ -45,7 +25,6 @@ double Voltage = 0;
 double VRMS = 0;
 double AmpsRMS = 0;
 float current;
-
 
 // SOC PARAMETERS
 float coulomb_count = 0; // A
@@ -75,27 +54,41 @@ unsigned long lastDebounceTime = 0;  // the last time the output pin was toggled
 unsigned long debounceDelay = 100;    // the debounce time; increase if the output flickers
 #define touch_threshold 30
 
-
 //OLED 
-#include <SPI.h>
-#include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 #define SCREEN_WIDTH 128 // OLED display width, in pixels
 #define SCREEN_HEIGHT 64 // OLED display height, in pixels
 #define OLED_RESET     4 // Reset pin # (or -1 if sharing Arduino reset pin)
 #define SCREEN_ADDRESS 0x3C ///< See datasheet for Address; 0x3D for 128x64, 0x3C for 128x32
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
+void ir_setup();
+float get_voltage();
+float get_current();
+float getVPP();
+float get_current_2();
+float getVPP_2();
+int determine_battery_type(float voltage);
+void AllPixels();
+void TextDisplay();
+void DownloadDisplay();
+void InvertedTextDisplay();
+void InternalResistanceSetup();
+void IR_value(float ir);
+void Display_parameters(float voltage, float current, float test,  float battery_soh);
+void ir_setup_display(float ocv, float vbat, float cbat);
+
 void setup() {
+
   Serial.begin(9600);
-  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS)) {
+
+  if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
+  {
     Serial.println(F("SSD1306 allocation failed"));
     for(;;); // Don't proceed, loop forever
   }
 
-  gprsSerial.begin(9600);
-  
+  gprsSerialInitialize();
+
   display.clearDisplay();
   display.display();
   delay(1000);
@@ -105,14 +98,14 @@ void setup() {
   InvertedTextDisplay();
   InternalResistanceSetup();
 
-
   //COMPUTE ACTUAL BATTERY CAPACITY
   battery_capacity = battery_capacity * battery_soh * battery_efficiency;
 
   //DOWNLOAD PARAMATERS FROM SERVER
   DownloadDisplay();
-  while(voltage_cal == 0){
-   download_from_server(user); 
+  while( 0 == getVoltageCalibration() ) 
+  {
+    sim800Interface_downloadFromServer( USER_ID ); 
   }
   
   ir_setup();
@@ -120,7 +113,8 @@ void setup() {
 
 }
 
-void loop() {
+void loop()
+{
 
   //get voltage
   float voltage = get_voltage();
@@ -132,242 +126,23 @@ void loop() {
   current = get_current_2();
 
   //compute SOC
-  battery_soc = last_soc  + charge_state*(current/battery_capacity)*0.000277778*100 + SOC_cal;
+  battery_soc = last_soc  + charge_state*(current/battery_capacity)*0.000277778*100 + getSocCalibration();
 
   //compute SOH
   reol = (165*rinit)/100;
-  battery_soh = (ocv - vbat)/(reol*cbat)*100 + SOH_cal;
+  battery_soh = (ocv - vbat)/(reol*cbat)*100 + getSohCalibration();
 
 
  Display_parameters(voltage,current, battery_soc,battery_soh);
- transmit_to_server(user,voltage,current, battery_soh, battery_soc, internal_resistance);
+ transmit_to_server( USER_ID,voltage,current, battery_soh, battery_soc, internal_resistance );
 
 
 }
-
-
-void ShowSerialData()
-{
-  while(gprsSerial.available()!=0)
-  Serial.write(gprsSerial.read());
-  
-}
-
-
-void download_from_server(int user_num)
-{
-  String str= "http://endicatorapp.pythonanywhere.com/api/v1/batteries/get_values?user=" + String(user_num);
-  String sim_str = "AT+HTTPPARA=\"URL\",\"" + str + "\"";
-   
-    if(millis() > time_1_DOWNLOAD + INTERVAL_MESSAGE1_DOWNLOAD){ 
-        time_1_DOWNLOAD = millis();
-        position_1_DOWNLOAD = position_1_DOWNLOAD + 1;
-        
-        if(position_1_DOWNLOAD == 1){ // @100ms
-          gprsSerial.println("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"");
-        }
-
-         if(position_1_DOWNLOAD == 2){ // @200ms
-          gprsSerial.println("AT+SAPBR=3,1,\"APN\",\"smartlte\"");
-        }
-
-        if(position_1_DOWNLOAD == 3){ // @300ms
-          gprsSerial.println("AT+SAPBR=3,1,\"USER\",\"\"");
-        }
-
-
-        if(position_1_DOWNLOAD == 4){ // @400ms
-          gprsSerial.println("AT+SAPBR=3,1,\"PWD\",\"\"");
-        }
-
-        if(position_1_DOWNLOAD == 5){ // @500ms
-          gprsSerial.println("AT+SAPBR=1,1");
-        }
-
-
-        if(position_1_DOWNLOAD == 6){ // @600ms
-          gprsSerial.println("AT+SAPBR=2,1");
-        }
-
-        if(position_1_DOWNLOAD == 7){ // @700ms
-          gprsSerial.println("AT+HTTPINIT");
-        }
-
-
-        if(position_1_DOWNLOAD == 8){ //@800ms
-          gprsSerial.println("AT+HTTPPARA=\"CID\",1");
-        }
-
-        if(position_1_DOWNLOAD == 9){ //@900ms
-          gprsSerial.println(sim_str);
-        }
-
-
-        if(position_1_DOWNLOAD == 10){ //@1000ms
-          gprsSerial.println("AT+HTTPACTION=0");//get local IP adress
-          delay(2000);
-
-        }
-
-
-        if(position_1_DOWNLOAD == 11){ //@1100ms
-          gprsSerial.println("AT+HTTPREAD=0,81");//get local IP adress
-          ShowDownload();
-        }
-
-        if(position_1_DOWNLOAD == 12){ //@1200ms
-          gprsSerial.println("AT+HTTPTERM");
-          position_1_DOWNLOAD = 0;
-        }
-
-    }
-  
-}
-
-
-void ShowDownload()
-{ 
-  int i=0;
-  char *array_var[3]; // Number of variables to save
-  char *token;
-  String textMessage;
-  while(gprsSerial.available()!=0) {
-
-      textMessage = gprsSerial.readString();
-      textMessage.remove(0, 98);  // greeting now contains "heo"
-      textMessage.remove(textMessage.length()-7, 7);
-      Serial.println(textMessage);
-      char received_message[textMessage.length() + 1]; 
-      textMessage.toCharArray(received_message, textMessage.length() + 1);
-      Serial.println(received_message);
-      token = strtok(received_message, del);
-      while( token != NULL ) 
-   {
-     i++;
-     Serial.println(i);
-     if(i == 1){
-      voltage_cal = atof(token);
-     }
-     else if ( i == 2){
-      current_cal = atof(token);
-    }
-     else if (i == 3){
-      SOH_cal = atof(token);
-    }
-
-    else if (i == 4){
-      SOC_cal = atof(token);
-    }
-
-      token = strtok(NULL, del);
-    }
-
-    Serial.println("Saved");
-    Serial.print("VOLTAGE CALIBRATION: ");
-    Serial.println(voltage_cal);
-    Serial.print("CURRENT CALIBRATION: ");
-    Serial.println(current_cal);
-    Serial.print("SOH CALIBRATION: ");
-    Serial.println(SOH_cal);
-    Serial.print("SOC CALIBRATION: ");
-    Serial.println(SOC_cal);
-
-  }
-}
-
-
-void transmit_to_server(int user_num, float voltage, float current, float soh, float soc, float internal_resistance)
-{
-  if (soc == 0){
-    soh = 0;
-  }
-  String str= "http://endicatorapp.pythonanywhere.com/api/v1/batteries/update?user=" 
-  + String(user_num) 
-  + "&field1=" + String(voltage) 
-  + "&field2=" + String(current) 
-  + "&field3=" + String(soc)  
-  + "&field4=" + String(soh)
-  + "&field5=" + String(internal_resistance);
-  String sim_str = "AT+HTTPPARA=\"URL\",\"" + str + "\"";
-
-   if (gprsSerial.available())
-    Serial.write(gprsSerial.read());
-   
-    if(millis() > time_1 + INTERVAL_MESSAGE1){ 
-        time_1 = millis();
-        position_1 = position_1 + 1;
-        
-        if(position_1 == 1){ // @100ms
-          gprsSerial.println("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"");
-        }
-
-         if(position_1 == 2){ // @200ms
-          gprsSerial.println("AT+SAPBR=3,1,\"APN\",\"smartlte\"");
-        }
-
-        if(position_1 == 3){ // @300ms
-          gprsSerial.println("AT+SAPBR=3,1,\"USER\",\"\"");
-        }
-
-
-        if(position_1 == 4){ // @400ms
-          gprsSerial.println("AT+SAPBR=3,1,\"PWD\",\"\"");
-        }
-
-        if(position_1 == 5){ // @500ms
-          gprsSerial.println("AT+SAPBR=1,1");
-        }
-
-
-        if(position_1 == 6){ // @600ms
-          gprsSerial.println("AT+SAPBR=2,1");
-        }
-
-        if(position_1 == 7){ // @700ms
-          gprsSerial.println("AT+HTTPINIT");
-        }
-
-
-        if(position_1 == 8){ //@800ms
-          gprsSerial.println("AT+HTTPPARA=\"CID\",1");
-        }
-
-        if(position_1 == 9){ //@900ms
-          gprsSerial.println(sim_str);
-        }
-
-
-        if(position_1 == 10){ //@1000ms
-          gprsSerial.println("AT+HTTPACTION=0");//get local IP adress
-        }
-
-
-        if(position_1 == 12){ //@1200ms
-          gprsSerial.println("AT+HTTPTERM");
-          position_1 = 0;
-        }
-
-    }
-
-
-   if(millis() > time_2 + INTERVAL_MESSAGE2){ 
-        time_2 = millis();
-        ShowSerialData();
-      }
-  
-}
-
-
-
-
-
-
-
 
 void ir_setup()
 {
   //Determine Initial SOC
-  last_soc = determine_battery_type(ocv) ;
+  last_soc = determine_battery_type(ocv);
   
   while (ledState) 
   {
@@ -379,9 +154,6 @@ void ir_setup()
           if ((millis() - lastDebounceTime) > debounceDelay) {
             ledState = false;
           }
-          
-          
-          
           ocv = get_voltage();
           
          
@@ -418,10 +190,6 @@ void ir_setup()
           if ((millis() - lastDebounceTime) > debounceDelay) {
             ledState = false;
           }
-
-  
-  
- 
   if (vbat < 4){
     vbat = 0;
   }
@@ -448,8 +216,6 @@ void ir_setup()
   Serial.print("Internal Resistance");
   Serial.println(internal_resistance);
   IR_value(internal_resistance);
-
-
 }
 
 float get_voltage()
@@ -460,7 +226,7 @@ ADC_VALUE = analogRead(34);
                   /
                  (r2/(r1+r2));
  float estimated_value = simpleKalmanFilter_voltage.updateEstimate(voltage_value);
- return estimated_value + voltage_cal;
+ return estimated_value + getVoltageCalibration();
 }
 
 float get_current()
@@ -470,7 +236,7 @@ float get_current()
   VRMS = (Voltage/2.0) *0.707;   //root 2 is 0.707
   AmpsRMS = ((VRMS * 1000)/mVperAmp)-0.25; //0.3 is the error I got for my sensor
   float estimated_value = simpleKalmanFilter_current.updateEstimate(AmpsRMS);
-  return estimated_value + current_cal;
+  return estimated_value + getCurrentCalibration();
 }
 float getVPP()
 {
@@ -511,7 +277,7 @@ float get_current_2()
   VRMS = (Voltage/2.0) *0.707;   //root 2 is 0.707
   AmpsRMS = ((VRMS * 1000)/mVperAmp)-0.25; //0.3 is the error I got for my sensor
   float estimated_value = simpleKalmanFilter_current.updateEstimate(AmpsRMS);
-  return estimated_value + current_cal;
+  return estimated_value + getCurrentCalibration();
 }
 
 float getVPP_2()
