@@ -1,10 +1,13 @@
 #include "sensors.h"
 #include "sim800l_interface.h"
+#include "utils.h"
+
+#define VPP_SAMPLING_TIME ( 700U ) 
+#define RESISTOR_ONE_VALUE ( 100000U )
+#define RESISTOR_TWO_VALUE ( 5000U )
 
 SimpleKalmanFilter simpleKalmanFilter_voltage(2, 2, 0.1);
 SimpleKalmanFilter simpleKalmanFilter_current(2, 2, 0.01);
-
-#define VPP_SAMPLING_TIME ( 700U ) 
 
 /* Private Function Declaration */
 static float getVpp( void );
@@ -16,12 +19,18 @@ float sensors_getVoltage( void )
     float currentVoltageValue = 0;
     float estimated_value = 0;
     float adcVoltageValue = 0;
+    float denominator = ( RESISTOR_TWO_VALUE / ( RESISTOR_ONE_VALUE + RESISTOR_TWO_VALUE ) );
 
     adcVoltageValue = analogRead( GPIO_VOLTAGE_PIN );
-    currentVoltageValue = ( ( adcVoltageValue * 3.3 ) / (4095) ) / ( RESISTOR_TWO_VALUE / ( RESISTOR_ONE_VALUE + RESISTOR_TWO_VALUE ) );
+    
+    if ( 0 != denominator)
+    {
+        currentVoltageValue = ( ( adcVoltageValue * 3.3 ) / (4095) ) / denominator;
+    }
+
     estimated_value = simpleKalmanFilter_voltage.updateEstimate( currentVoltageValue );
 
-    return ( estimated_value + getVoltageCalibration() );
+    return ( estimated_value + sim800lInterface_getVoltageCalibration() );
 }
 
 float sensors_getCurrent( void )
@@ -31,7 +40,7 @@ float sensors_getCurrent( void )
     double AmpsRMS = ((VRMS * 1000)/MV_VOLTAGE_PER_AMP)-0.25; //0.3 is the error I got for my sensor
     float estimated_value = simpleKalmanFilter_current.updateEstimate(AmpsRMS);
 
-    return ( estimated_value + getCurrentCalibration() );
+    return ( estimated_value + sim800lInterface_getCurrentCalibration() );
 }
 
 float sensors_getCurrent_2( void )
@@ -41,7 +50,7 @@ float sensors_getCurrent_2( void )
     double AmpsRMS = ((VRMS * 1000)/MV_VOLTAGE_PER_AMP)-0.25; //0.3 is the error I got for my sensor
     float estimated_value = simpleKalmanFilter_current.updateEstimate(AmpsRMS);
     
-    return  ( estimated_value + getCurrentCalibration() );
+    return  ( estimated_value + sim800lInterface_getCurrentCalibration() );
 }
 
 /* Private Function Definition */

@@ -1,11 +1,17 @@
 #include "sim800l_interface.h"
+#include "utils.h"
 
 #define GPRS_SERIAL_BUAD_RATE ( 9600 )
+#define MID_DELAY             ( 2000 )
+#define INTERVAL_MESSAGE_1    ( 100 )
+#define INTERVAL_MESSAGE_2    ( 1100 )
+#define INTERVAL_MESSAGE1_DOWNLOAD ( 1000 )
+#define INTERVAL_MESSAGE2_DOWNLOAD ( 1100 )
 
 static SoftwareSerial gprsSerial(27,26);
 
-static unsigned long timeDownload1 = 0;
-static int positionDownload1 = 0;
+static unsigned long timeSetupDownload = 0;
+static int stateDownload = 0;
 
 static float voltageCalibration = 0;
 static float currentCalibration = 0;
@@ -16,40 +22,33 @@ static unsigned long time2 = 0;
 static int position1 = 0;
 
 /* Private Function Declaration*/
-static void ShowDownload( void );
+static void downloadParamaters( void );
+static void ShowSerialData( void );
 
 /* Public Function Definition */
-void gprsSerialInitialize( void )
+void sim800lInterface_gprsSerialInitialize( void )
 {
     gprsSerial.begin( GPRS_SERIAL_BUAD_RATE );
 }
 
-float getVoltageCalibration( void )
+float sim800lInterface_getVoltageCalibration( void )
 {
     return voltageCalibration;
 }
 
-float getCurrentCalibration( void )
+float sim800lInterface_getCurrentCalibration( void )
 {
     return currentCalibration;
 }
 
-float getSohCalibration( void )
+float sim800lInterface_getSohCalibration( void )
 {
     return sohCalibration;
 }
 
-float getSocCalibration( void )
+float sim800lInterface_getSocCalibration( void )
 {
     return socCalibration;
-}
-
-void ShowSerialData()
-{
-    while(gprsSerial.available()!=0)
-    {
-        Serial.write(gprsSerial.read());
-    }
 }
 
 void sim800Interface_downloadFromServer(int user_num)
@@ -57,78 +56,79 @@ void sim800Interface_downloadFromServer(int user_num)
     String str= "http://endicatorapp.pythonanywhere.com/api/v1/batteries/get_values?user=" + String(user_num);
     String sim_str = "AT+HTTPPARA=\"URL\",\"" + str + "\"";
 
-    if(millis() > timeDownload1 + INTERVAL_MESSAGE1_DOWNLOAD)
+    if(millis() > timeSetupDownload + INTERVAL_MESSAGE1_DOWNLOAD)
     { 
-        timeDownload1 = millis();
-        positionDownload1 = positionDownload1 + 1;
+        timeSetupDownload = millis();
+        stateDownload += 1;
         
-        if(positionDownload1 == 1)
+        if(stateDownload == 1)
         { // @100ms
             gprsSerial.println("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"");
         }
 
-        if(positionDownload1 == 2)
+        if(stateDownload == 2)
         { // @200ms
             gprsSerial.println("AT+SAPBR=3,1,\"APN\",\"smartlte\"");
         }
 
-        if(positionDownload1 == 3)
+        if(stateDownload == 3)
         { // @300ms
             gprsSerial.println("AT+SAPBR=3,1,\"USER\",\"\"");
         }
 
-        if(positionDownload1 == 4)
+        if(stateDownload == 4)
         { // @400ms
             gprsSerial.println("AT+SAPBR=3,1,\"PWD\",\"\"");
         }
 
-        if(positionDownload1 == 5)
+        if(stateDownload == 5)
         { // @500ms
             gprsSerial.println("AT+SAPBR=1,1");
         }
 
-        if(positionDownload1 == 6)
+        if(stateDownload == 6)
         { // @600ms
             gprsSerial.println("AT+SAPBR=2,1");
         }
 
-        if(positionDownload1 == 7)
+        if(stateDownload == 7)
         { // @700ms
             gprsSerial.println("AT+HTTPINIT");
         }
 
-        if(positionDownload1 == 8)
+        if(stateDownload == 8)
         { //@800ms
             gprsSerial.println("AT+HTTPPARA=\"CID\",1");
         }
 
-        if(positionDownload1 == 9)
+        if(stateDownload == 9)
         { //@900ms
             gprsSerial.println(sim_str);
         }
 
-
-        if(positionDownload1 == 10)
+        if(stateDownload == 10)
         { //@1000ms
             gprsSerial.println("AT+HTTPACTION=0");//get local IP adress
-            delay(2000);
         }
 
-        if(positionDownload1 == 11)
+        if(stateDownload == 11)
         { //@1100ms
-            gprsSerial.println("AT+HTTPREAD=0,81");//get local IP adress
-            ShowDownload();
+            gprsSerial.println("AT+HTTPREAD");//get local IP adress
+
         }
 
-        if(positionDownload1 == 12)
+        if(stateDownload == 12)
         { //@1200ms
             gprsSerial.println("AT+HTTPTERM");
-            positionDownload1 = 0;
+            gprsSerial.println("AT+SAPBR=0,1");
+            stateDownload = 0;
         }
+
+        ShowSerialData();
     }
 }
 
-void transmit_to_server(int user_num, float voltage, float current, float soh, float soc, float internal_resistance)
+void sim800lInterface_transmitToServer(int user_num, float voltage, float current, float soh, float soc, float internalResistance)
 {
     if (soc == 0)
     {
@@ -140,13 +140,8 @@ void transmit_to_server(int user_num, float voltage, float current, float soh, f
     + "&field2=" + String(current) 
     + "&field3=" + String(soc)  
     + "&field4=" + String(soh)
-    + "&field5=" + String(internal_resistance);
+    + "&field5=" + String(internalResistance);
     String sim_str = "AT+HTTPPARA=\"URL\",\"" + str + "\"";
-
-    if (gprsSerial.available())
-    {
-        Serial.write(gprsSerial.read());
-    }
 
     if(millis() > time1 + INTERVAL_MESSAGE_1)
     { 
@@ -218,7 +213,7 @@ void transmit_to_server(int user_num, float voltage, float current, float soh, f
 }
 
 /* Private Function Definition */
-void ShowDownload( void )
+static void downloadParamaters( void )
 { 
     int i=0;
     char *array_var[3]; // Number of variables to save
@@ -230,15 +225,15 @@ void ShowDownload( void )
         textMessage = gprsSerial.readString();
         textMessage.remove(0, 98);  // greeting now contains "heo"
         textMessage.remove(textMessage.length()-7, 7);
-        Serial.println(textMessage);
+        DEBUG_PRINT_LN(textMessage);
         char received_message[textMessage.length() + 1]; 
         textMessage.toCharArray(received_message, textMessage.length() + 1);
-        Serial.println(received_message);
+        DEBUG_PRINT_LN(received_message);
         token = strtok(received_message, del);
         while( token != NULL ) 
         {
             i++;
-            Serial.println(i);
+            DEBUG_PRINT_LN(i);
             if(i == 1)
             {
                 voltageCalibration = atof(token);
@@ -257,14 +252,22 @@ void ShowDownload( void )
         }
         token = strtok(NULL, del);
     }
-    Serial.println("Saved");
-    Serial.print("VOLTAGE CALIBRATION: ");
-    Serial.println(voltageCalibration);
-    Serial.print("CURRENT CALIBRATION: ");
-    Serial.println(currentCalibration);
-    Serial.print("SOH CALIBRATION: ");
-    Serial.println(sohCalibration);
-    Serial.print("SOC CALIBRATION: ");
-    Serial.println(socCalibration);
+    DEBUG_PRINT_LN("Saved");
+    DEBUG_PRINT("VOLTAGE CALIBRATION: ");
+    DEBUG_PRINT_LN(voltageCalibration);
+    DEBUG_PRINT("CURRENT CALIBRATION: ");
+    DEBUG_PRINT_LN(currentCalibration);
+    DEBUG_PRINT("SOH CALIBRATION: ");
+    DEBUG_PRINT_LN(sohCalibration);
+    DEBUG_PRINT("SOC CALIBRATION: ");
+    DEBUG_PRINT_LN(socCalibration);
+    }
+}
+
+static void ShowSerialData( void )
+{
+    while(gprsSerial.available()!=0)
+    {
+        Serial.write(gprsSerial.read());
     }
 }
