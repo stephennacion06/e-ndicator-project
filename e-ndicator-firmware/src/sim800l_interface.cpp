@@ -1,5 +1,8 @@
 #include "sim800l_interface.h"
 #include "utils.h"
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoJson.h>
 
 #define GPRS_SERIAL_BUAD_RATE ( 9600 )
 #define MID_DELAY             ( 2000 )
@@ -7,6 +10,7 @@
 #define INTERVAL_MESSAGE_2    ( 1100 )
 #define INTERVAL_MESSAGE1_DOWNLOAD ( 1000 )
 #define INTERVAL_MESSAGE2_DOWNLOAD ( 1100 )
+#define COMMON_DELAY               ( 1000 )
 
 static SoftwareSerial gprsSerial(27,26);
 
@@ -29,6 +33,32 @@ static void ShowSerialData( void );
 void sim800lInterface_gprsSerialInitialize( void )
 {
     gprsSerial.begin( GPRS_SERIAL_BUAD_RATE );
+
+    delay( COMMON_DELAY );
+
+    DEBUG_PRINT_LN( "Initializing... SIM800l" );
+    gprsSerial.println("AT");
+
+    delay( COMMON_DELAY );
+
+    if( gprsSerial.find("OK") )
+    {
+        DEBUG_PRINT_LN("SIM800L ready");
+
+        // Set APN and establish GPRS connection
+        gprsSerial.println("AT+SAPBR=3,1,\"Contype\",\"GPRS\"");
+        delay(COMMON_DELAY);
+        gprsSerial.println("AT+SAPBR=3,1,\"APN\",\"smartlte\"");
+        delay(COMMON_DELAY);
+        gprsSerial.println("AT+SAPBR=1,1");
+        delay(COMMON_DELAY);
+    } 
+    else 
+    {
+        // TODO: Update failed sim800l flag 
+        DEBUG_PRINT_LN("Error: SIM800L not responding");
+        while (1);
+    }
 }
 
 float sim800lInterface_getVoltageCalibration( void )
@@ -56,75 +86,38 @@ void sim800Interface_downloadFromServer(int user_num)
     String str= "http://endicatorapp.pythonanywhere.com/api/v1/batteries/get_values?user=" + String(user_num);
     String sim_str = "AT+HTTPPARA=\"URL\",\"" + str + "\"";
 
-    if(millis() > timeSetupDownload + INTERVAL_MESSAGE1_DOWNLOAD)
-    { 
-        timeSetupDownload = millis();
-        stateDownload += 1;
-        
-        if(stateDownload == 1)
-        { // @100ms
-            gprsSerial.println("AT+SAPBR=3,1,\"CONTYPE\",\"GPRS\"");
-        }
+    // Initialize HTTP service
+    gprsSerial.println("AT+HTTPINIT");
+    delay(COMMON_DELAY);
+    // Set URL
+    gprsSerial.println("AT+HTTPPARA=\"CID\",1");
+    delay(COMMON_DELAY);
+    
+    gprsSerial.println(sim_str);
+    delay(COMMON_DELAY);
+    
+    // Initiate GET request
+    gprsSerial.println("AT+HTTPACTION=0");
+    delay(3000);
+    
+    // Read HTTP response
+    gprsSerial.println("AT+HTTPREAD");
+    delay(COMMON_DELAY);
+    
+    // Download Parameer from Server
+    downloadParamaters();
 
-        if(stateDownload == 2)
-        { // @200ms
-            gprsSerial.println("AT+SAPBR=3,1,\"APN\",\"smartlte\"");
-        }
-
-        if(stateDownload == 3)
-        { // @300ms
-            gprsSerial.println("AT+SAPBR=3,1,\"USER\",\"\"");
-        }
-
-        if(stateDownload == 4)
-        { // @400ms
-            gprsSerial.println("AT+SAPBR=3,1,\"PWD\",\"\"");
-        }
-
-        if(stateDownload == 5)
-        { // @500ms
-            gprsSerial.println("AT+SAPBR=1,1");
-        }
-
-        if(stateDownload == 6)
-        { // @600ms
-            gprsSerial.println("AT+SAPBR=2,1");
-        }
-
-        if(stateDownload == 7)
-        { // @700ms
-            gprsSerial.println("AT+HTTPINIT");
-        }
-
-        if(stateDownload == 8)
-        { //@800ms
-            gprsSerial.println("AT+HTTPPARA=\"CID\",1");
-        }
-
-        if(stateDownload == 9)
-        { //@900ms
-            gprsSerial.println(sim_str);
-        }
-
-        if(stateDownload == 10)
-        { //@1000ms
-            gprsSerial.println("AT+HTTPACTION=0");//get local IP adress
-        }
-
-        if(stateDownload == 11)
-        { //@1100ms
-            gprsSerial.println("AT+HTTPREAD");//get local IP adress
-
-        }
-
-        if(stateDownload == 12)
-        { //@1200ms
-            gprsSerial.println("AT+HTTPTERM");
-            gprsSerial.println("AT+SAPBR=0,1");
-            stateDownload = 0;
-        }
-
-        ShowSerialData();
+    // Terminate HTTP service
+    gprsSerial.println("AT+HTTPTERM");
+    delay(COMMON_DELAY);
+    
+    // Disable GPRS context
+    gprsSerial.println("AT+SAPBR=0,1");
+    delay(COMMON_DELAY);
+    
+    while (gprsSerial.available()) {
+        char c = gprsSerial.read();
+        Serial.write(c);
     }
 }
 
@@ -209,6 +202,42 @@ void sim800lInterface_transmitToServer(int user_num, float voltage, float curren
     { 
         time2 = millis();
         ShowSerialData();
+    }
+}
+
+void sim800Interface_wifiTransmission( int user_num, float voltage, float current, float soh, float soc, float internalResistance )
+{
+    // Serialize JSON to a string and Create a JSON object
+    HTTPClient http;
+    String strUrl = "";
+    if (soc == 0)
+    {
+        soh = 0;
+    }
+    strUrl = "http://endicatorapp.pythonanywhere.com/api/v1/batteries/update?user=" 
+    + String(user_num) 
+    + "&field1=" + String(voltage) 
+    + "&field2=" + String(current) 
+    + "&field3=" + String(soc)  
+    + "&field4=" + String(soh)
+    + "&field5=" + String(internalResistance);
+    
+    http.begin(strUrl); // Specify the URL to access
+    int httpResponseCode = http.GET();
+    if(httpResponseCode > 0) 
+    {
+        DEBUG_PRINT("HTTP Response Code: ");
+        DEBUG_PRINT_LN(httpResponseCode);
+
+        // If a successful response is received, you can read the content
+        String payload = http.getString();
+        DEBUG_PRINT_LN("Response:");
+        DEBUG_PRINT_LN(payload);
+    } 
+    else 
+    {
+        DEBUG_PRINT("Error on HTTP request. Response Code: ");
+        DEBUG_PRINT_LN(httpResponseCode);
     }
 }
 

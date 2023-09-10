@@ -1,4 +1,6 @@
 #include <Arduino.h>
+#include <WiFiClientSecure.h>
+#include <WiFiManager.h>
 #include "user.h"
 #include "sim800l_interface.h"
 #include "sensors.h"
@@ -6,7 +8,13 @@
 #include "oled_display.h"
 #include "utils.h"
 
+
 #define MINIMUM_VOLTAGE ( 4 )
+
+// Wifi Manager local Initialization
+static bool wifiRes;
+static bool wifiEnabled = false;
+static WiFiManager wm;
 
 void setup()
 {
@@ -16,14 +24,30 @@ void setup()
 
   oledDisplay_initialize();
   
-  //DOWNLOAD PARAMATERS FROM SERVER
+  // DOWNLOAD PARAMATERS FROM SERVER
   oledDisplay_downloadDisplay();
-  while( 0 == sim800lInterface_getVoltageCalibration() ) 
+  sim800Interface_downloadFromServer( USER_ID ); 
+
+  // IF Download Parameter failed start WiFi manager
+  if( 0 == sim800lInterface_getVoltageCalibration() )
   {
-    sim800Interface_downloadFromServer( USER_ID ); 
-  }
+    // TODO: Display Wifi Manager Started
+
+    // Launch WiFi Manager
+    wifiRes = wm.autoConnect("Endicator Wifi","password"); // password protected ap
+
+    if(!wifiRes) 
+    {
+      // TODO: Restart ESP32 and Dispaly failed wifi connection
+      ESP.restart();
+    }
+    else
+    {
+      wifiEnabled = true;
+    }
+  } 
   
-  batteryParameter_internalResistanceSetup();
+  // batteryParameter_internalResistanceSetup();
 }
 
 void loop()
@@ -50,5 +74,12 @@ void loop()
   float internalResistance =  batteryParameter_getInternalResistance();
 
   oledDisplay_showParameters( voltageReading, currentReading , batterySoh, batterySoc );
-  sim800lInterface_transmitToServer( USER_ID, voltageReading, currentReading, batterySoh, batterySoc, internalResistance );
+  if(wifiEnabled)
+  {
+    sim800Interface_wifiTransmission( USER_ID, voltageReading, currentReading, batterySoh, batterySoc, internalResistance );
+  }
+  else
+  { 
+    sim800lInterface_transmitToServer( USER_ID, voltageReading, currentReading, batterySoh, batterySoc, internalResistance );
+  }
 }
