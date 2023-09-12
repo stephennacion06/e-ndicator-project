@@ -16,5 +16,5 @@ void oledDisplay_irValue(float ir);
 void oledDisplay_showParameters(float voltage, float current, float batterySoh, float batterySoc);
 void oledDisplay_irSetupDisplay(float m_openCircuitVoltageValue, float m_voltageWithLoad, float m_currentWithLoad);
 void oledDisplay_downloadDisplay( void );
-
+void oledDisplay_wifiTextDisplay( String text );
 #endif // OLED_DISPLAY_H

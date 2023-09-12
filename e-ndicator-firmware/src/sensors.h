@@ -3,7 +3,7 @@
 #include <Arduino.h>
 #include <SimpleKalmanFilter.h>
 
-#define GPIO_CURRENT_PIN ( 35U )
+#define GPIO_CURRENT_PIN ( 32U )
 #define GPIO_VOLTAGE_PIN ( 34U )
 #define GPIO_TOUCH_SENSOR_PIN ( T3 )
 

@@ -169,10 +169,21 @@ void oledDisplay_irSetupDisplay(float m_openCircuitVoltageValue, float m_voltage
 void oledDisplay_downloadDisplay( void )
 {
     display.clearDisplay();
-    display.setTextSize(2);
+    display.setTextSize(1);
     display.setTextColor(SSD1306_WHITE);
     display.setCursor(24,28);
     display.println("DOWNLOADING");
+    display.display();
+    delay(LONG_DELAY);
+}
+
+void oledDisplay_wifiTextDisplay( String text )
+{
+    display.clearDisplay();
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(24,28);
+    display.println(text);
     display.display();
     delay(LONG_DELAY);
 }

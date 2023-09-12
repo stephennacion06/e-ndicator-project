@@ -16,6 +16,8 @@ static bool wifiRes;
 static bool wifiEnabled = false;
 static WiFiManager wm;
 
+extern batteryCalibration g_batteryCalibrationData;
+
 void setup()
 {
   Serial.begin(9600);
@@ -31,8 +33,9 @@ void setup()
   // IF Download Parameter failed start WiFi manager
   if( 0 == sim800lInterface_getVoltageCalibration() )
   {
-    // TODO: Display Wifi Manager Started
-
+    // Display Wifi Manager Started
+    oledDisplay_wifiTextDisplay("Trying WiFi");
+    
     // Launch WiFi Manager
     wifiRes = wm.autoConnect("Endicator Wifi","password"); // password protected ap
 
@@ -43,11 +46,24 @@ void setup()
     }
     else
     {
+      // TODO: WIFI DOWNLOAD DISPLAY
       wifiEnabled = true;
+      oledDisplay_wifiTextDisplay("WiFi Connected");
+      sim800Interface_wifiDownload( USER_ID );
+      // Print the parsed values
+      DEBUG_PRINT("Voltage Calibration: ");
+      DEBUG_PRINT_LN(g_batteryCalibrationData.voltageCalibration, 2); // Print with 2 decimal places
+      DEBUG_PRINT("Current Calibration: ");
+      DEBUG_PRINT_LN(g_batteryCalibrationData.currentCalibration, 2); // Print with 2 decimal places
+      DEBUG_PRINT("SOH Calibration: ");
+      DEBUG_PRINT_LN(g_batteryCalibrationData.sohCalibration, 2); // Print with 2 decimal places
+      DEBUG_PRINT("SOC Calibration: ");
+      DEBUG_PRINT_LN(g_batteryCalibrationData.socCalibration, 2); // Print with 2 decimal places
+      oledDisplay_wifiTextDisplay("Download Done");
     }
   } 
   
-  // batteryParameter_internalResistanceSetup();
+  batteryParameter_internalResistanceSetup();
 }
 
 void loop()

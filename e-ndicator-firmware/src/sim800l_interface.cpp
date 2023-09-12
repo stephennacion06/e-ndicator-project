@@ -12,15 +12,13 @@
 #define INTERVAL_MESSAGE2_DOWNLOAD ( 1100 )
 #define COMMON_DELAY               ( 1000 )
 
+batteryCalibration g_batteryCalibrationData;
+
 static SoftwareSerial gprsSerial(27,26);
 
 static unsigned long timeSetupDownload = 0;
 static int stateDownload = 0;
 
-static float voltageCalibration = 0;
-static float currentCalibration = 0;
-static float sohCalibration = 0;
-static float socCalibration = 0;
 static unsigned long time1 = 0;
 static unsigned long time2 = 0;
 static int position1 = 0;
@@ -28,6 +26,7 @@ static int position1 = 0;
 /* Private Function Declaration*/
 static void downloadParamaters( void );
 static void ShowSerialData( void );
+static void updateCalibration( String paramString );
 
 /* Public Function Definition */
 void sim800lInterface_gprsSerialInitialize( void )
@@ -63,25 +62,25 @@ void sim800lInterface_gprsSerialInitialize( void )
 
 float sim800lInterface_getVoltageCalibration( void )
 {
-    return voltageCalibration;
+    return g_batteryCalibrationData.voltageCalibration;
 }
 
 float sim800lInterface_getCurrentCalibration( void )
 {
-    return currentCalibration;
+    return g_batteryCalibrationData.currentCalibration;
 }
 
 float sim800lInterface_getSohCalibration( void )
 {
-    return sohCalibration;
+    return g_batteryCalibrationData.sohCalibration;
 }
 
 float sim800lInterface_getSocCalibration( void )
 {
-    return socCalibration;
+    return g_batteryCalibrationData.socCalibration;
 }
 
-void sim800Interface_downloadFromServer(int user_num)
+void sim800Interface_downloadFromServer(int user_num )
 {
     String str= "http://endicatorapp.pythonanywhere.com/api/v1/batteries/get_values?user=" + String(user_num);
     String sim_str = "AT+HTTPPARA=\"URL\",\"" + str + "\"";
@@ -105,6 +104,7 @@ void sim800Interface_downloadFromServer(int user_num)
     delay(COMMON_DELAY);
     
     // Download Parameer from Server
+    // TODO: Use struct
     downloadParamaters();
 
     // Terminate HTTP service
@@ -118,6 +118,32 @@ void sim800Interface_downloadFromServer(int user_num)
     while (gprsSerial.available()) {
         char c = gprsSerial.read();
         Serial.write(c);
+    }
+}
+
+void sim800Interface_wifiDownload( int user_num )
+{
+    // Serialize JSON to a string and Create a JSON object
+    HTTPClient http;
+    String str= "http://endicatorapp.pythonanywhere.com/api/v1/batteries/get_values?user=" + String(user_num);
+
+    http.begin(str); // Specify the URL to access
+    int httpResponseCode = http.GET();
+    if(httpResponseCode > 0) 
+    {
+        DEBUG_PRINT("HTTP Response Code: ");
+        DEBUG_PRINT_LN(httpResponseCode);
+
+        // If a successful response is received, you can read the content
+        String payload = http.getString();
+        DEBUG_PRINT_LN("Response:");
+        DEBUG_PRINT_LN(payload);
+        updateCalibration(payload);
+    } 
+    else 
+    {
+        DEBUG_PRINT("Error on HTTP request. Response Code: ");
+        DEBUG_PRINT_LN(httpResponseCode);
     }
 }
 
@@ -265,31 +291,22 @@ static void downloadParamaters( void )
             DEBUG_PRINT_LN(i);
             if(i == 1)
             {
-                voltageCalibration = atof(token);
+                g_batteryCalibrationData.voltageCalibration = atof(token);
             }
-        else if ( i == 2 )
-        {
-            currentCalibration = atof(token);
+            else if ( i == 2 )
+            {
+                g_batteryCalibrationData.currentCalibration = atof(token);
+            }
+            else if (i == 3)
+            {
+                g_batteryCalibrationData.sohCalibration = atof(token);
+            }
+            else if (i == 4)
+            {
+                g_batteryCalibrationData.socCalibration = atof(token);
+            }
+            token = strtok(NULL, del);
         }
-        else if (i == 3)
-        {
-            sohCalibration = atof(token);
-        }
-        else if (i == 4)
-        {
-            socCalibration = atof(token);
-        }
-        token = strtok(NULL, del);
-    }
-    DEBUG_PRINT_LN("Saved");
-    DEBUG_PRINT("VOLTAGE CALIBRATION: ");
-    DEBUG_PRINT_LN(voltageCalibration);
-    DEBUG_PRINT("CURRENT CALIBRATION: ");
-    DEBUG_PRINT_LN(currentCalibration);
-    DEBUG_PRINT("SOH CALIBRATION: ");
-    DEBUG_PRINT_LN(sohCalibration);
-    DEBUG_PRINT("SOC CALIBRATION: ");
-    DEBUG_PRINT_LN(socCalibration);
     }
 }
 
@@ -298,5 +315,45 @@ static void ShowSerialData( void )
     while(gprsSerial.available()!=0)
     {
         Serial.write(gprsSerial.read());
+    }
+}
+
+static void updateCalibration( String paramString )
+{
+    // Remove the brackets "[" and "]" from the input string
+    paramString = paramString.substring(1, paramString.length() - 1);
+
+    // Parse the values
+    int valueIndex = 0;
+    while (paramString.length() > 0 && valueIndex < 4) 
+    {
+        // Find the index of the next comma
+        int commaIndex = paramString.indexOf(',');
+
+        // Extract the substring from the beginning to the comma
+        String valueStr = paramString.substring(0, commaIndex);
+
+        // Convert the substring to a floating-point number and assign it to the appropriate struct member
+        switch (valueIndex)
+        {
+            case 0:
+                g_batteryCalibrationData.voltageCalibration = valueStr.toFloat();
+                break;
+            case 1:
+                g_batteryCalibrationData.currentCalibration = valueStr.toFloat();
+                break;
+            case 2:
+                g_batteryCalibrationData.sohCalibration = valueStr.toFloat();
+                break;
+            case 3:
+                g_batteryCalibrationData.socCalibration = valueStr.toFloat();
+                break;
+        }
+
+        // Remove the parsed value and the comma from the input string
+        paramString = paramString.substring(commaIndex + 1);
+
+        // Increment the value index
+        valueIndex++;
     }
 }
