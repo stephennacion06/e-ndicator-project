@@ -1,10 +1,18 @@
 #include "sensors.h"
 #include "sim800l_interface.h"
 #include "utils.h"
+#include "user.h"
 
-#define VPP_SAMPLING_TIME ( 700U ) 
-#define RESISTOR_ONE_VALUE ( 100000U )
-#define RESISTOR_TWO_VALUE ( 5000U )
+#define VPP_SAMPLING_TIME ( 700 ) 
+#define RESISTOR_ONE_VALUE ( 100000 )
+#define RESISTOR_TWO_VALUE  ( 3300 )
+#define VOLTAGE_NUM_READINGS ( 100U )
+
+const float  DENOMINATOR  = (RESISTOR_TWO_VALUE ) / (float) ( RESISTOR_ONE_VALUE + RESISTOR_TWO_VALUE );
+
+static float voltageReadings[VOLTAGE_NUM_READINGS];
+static int voltageReadIndex  = 0;
+static float voltageTotal  = 0;
 
 SimpleKalmanFilter simpleKalmanFilter_voltage(2, 2, 0.1);
 SimpleKalmanFilter simpleKalmanFilter_current(2, 2, 0.01);
@@ -12,6 +20,7 @@ SimpleKalmanFilter simpleKalmanFilter_current(2, 2, 0.01);
 /* Private Function Declaration */
 static float getVpp( void );
 static float getVpp_2( void );
+static float voltageMovingAverage( float_t rawVoltage );
 
 /* Public Function Definition */
 float sensors_getVoltage( void )
@@ -19,17 +28,21 @@ float sensors_getVoltage( void )
     float currentVoltageValue = 0;
     float estimated_value = 0;
     float adcVoltageValue = 0;
-    float denominator = ( RESISTOR_TWO_VALUE / ( RESISTOR_ONE_VALUE + RESISTOR_TWO_VALUE ) );
+    float filteredVoltageValue = 0;
 
     adcVoltageValue = analogRead( GPIO_VOLTAGE_PIN );
-    
-    if ( 0 != denominator)
+    if ( DENOMINATOR > 0)
     {
-        currentVoltageValue = ( ( adcVoltageValue * 3.3 ) / (4095) ) / denominator;
+        currentVoltageValue = ( ( (float) adcVoltageValue * 3.3 ) / (4095.0) ) / DENOMINATOR;
+        if( currentVoltageValue > VOLTAGE_CALIBRATION )
+        {
+            currentVoltageValue += VOLTAGE_CALIBRATION;
+        } 
+        filteredVoltageValue = voltageMovingAverage(currentVoltageValue);
+        DEBUG_PRINT_LN("CALIBRATION(DC VoltageValue): " + String(filteredVoltageValue));
     }
 
     estimated_value = simpleKalmanFilter_voltage.updateEstimate( currentVoltageValue );
-
     return ( estimated_value + sim800lInterface_getVoltageCalibration() );
 }
 
@@ -113,4 +126,26 @@ static float getVpp_2( void )
     result = ((maxValue - minValue) * 5)/4096.0; //ESP32 ADC resolution 4096
 
     return result;
+}
+
+static float voltageMovingAverage( float_t rawVoltage )
+{  
+    ////Perform average on sensor readings
+    float average;
+    // subtract the last reading:
+    voltageTotal = voltageTotal - voltageReadings[voltageReadIndex];
+    // read the sensor:
+    voltageReadings[voltageReadIndex] = rawVoltage;
+    // add value to total:
+    voltageTotal = voltageTotal + voltageReadings[voltageReadIndex];
+    // handle index
+    voltageReadIndex = voltageReadIndex + 1;
+    if (voltageReadIndex >= VOLTAGE_NUM_READINGS)
+    {
+    voltageReadIndex = 0;
+    }
+    // calculate the average:
+    average = voltageTotal / VOLTAGE_NUM_READINGS;
+
+    return average;
 }
