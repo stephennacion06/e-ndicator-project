@@ -1,0 +1,3 @@
+[submodule "endicator-webapp"]
+	path = endicator-webapp
+	url = https://github.com/stephennacion06/endicatorwebapp.git
