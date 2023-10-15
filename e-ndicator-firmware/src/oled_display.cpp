@@ -177,7 +177,7 @@ void oledDisplay_downloadDisplay( void )
     delay(LONG_DELAY);
 }
 
-void oledDisplay_wifiTextDisplay( String text )
+void oledDisplay_CenterTextDisplay( String text )
 {
     display.clearDisplay();
     display.setTextSize(1);

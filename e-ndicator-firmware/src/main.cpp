@@ -8,7 +8,6 @@
 #include "oled_display.h"
 #include "utils.h"
 
-
 #define MINIMUM_VOLTAGE ( 4 )
 
 // Wifi Manager local Initialization
@@ -21,8 +20,8 @@ extern batteryCalibration g_batteryCalibrationData;
 void setup()
 {
   Serial.begin(9600);
-
-  sim800lInterface_gprsSerialInitialize();
+  
+  // sim800lInterface_gprsSerialInitialize();
 
   oledDisplay_initialize();
   
@@ -34,7 +33,7 @@ void setup()
   if( 0 == sim800lInterface_getVoltageCalibration() )
   {
     // Display Wifi Manager Started
-    oledDisplay_wifiTextDisplay("Trying WiFi");
+    oledDisplay_CenterTextDisplay("Trying WiFi");
     
     // Launch WiFi Manager
     wifiRes = wm.autoConnect("Endicator Wifi","password"); // password protected ap
@@ -48,7 +47,7 @@ void setup()
     {
       // TODO: WIFI DOWNLOAD DISPLAY
       wifiEnabled = true;
-      oledDisplay_wifiTextDisplay("WiFi Connected");
+      oledDisplay_CenterTextDisplay("WiFi Connected");
       sim800Interface_wifiDownload( USER_ID );
       // Print the parsed values
       DEBUG_PRINT("Voltage Calibration: ");
@@ -59,11 +58,15 @@ void setup()
       DEBUG_PRINT_LN(g_batteryCalibrationData.sohCalibration, 2); // Print with 2 decimal places
       DEBUG_PRINT("SOC Calibration: ");
       DEBUG_PRINT_LN(g_batteryCalibrationData.socCalibration, 2); // Print with 2 decimal places
-      oledDisplay_wifiTextDisplay("Download Done");
+      oledDisplay_CenterTextDisplay("Download Done");
     }
   } 
-  
+  sensors_initializeAllSensors();
+  xTaskCreate(sensors_voltageCurrentTask, "VoltageCurrentTask", 2048 , NULL, 1, NULL);
   batteryParameter_internalResistanceSetup();
+  batteryParameter_initializeSohParam();
+  // NOTE: Initialize first SOH before SOC parameters
+  batteryParameter_initializeSocParam();
 }
 
 void loop()
@@ -71,17 +74,11 @@ void loop()
   //get Voltage
   float voltageReading = sensors_getVoltage();
   
-  // TODO: Investigate why _2 is used
   //get Current
-  float currentReading = sensors_getCurrent_2();
-
-  if( voltageReading < MINIMUM_VOLTAGE )
-  {
-    voltageReading = 0;
-  }
+  float currentReading = sensors_getCurrentReading();
   
   // get SOC
-  float batterySoc = batteryParameter_getSoc( currentReading );
+  float batterySoc = batteryParameter_getSoc( currentReading, voltageReading );
 
   // get SOH
   float batterySoh = batteryParameter_getSoh();
@@ -89,7 +86,14 @@ void loop()
   // get Internal Resistance
   float internalResistance =  batteryParameter_getInternalResistance();
 
+  if( voltageReading < MINIMUM_VOLTAGE )
+  {
+    voltageReading = 0;
+    currentReading = 0;
+  }
+
   oledDisplay_showParameters( voltageReading, currentReading , batterySoh, batterySoc );
+  
   if(wifiEnabled)
   {
     sim800Interface_wifiTransmission( USER_ID, voltageReading, currentReading, batterySoh, batterySoc, internalResistance );
