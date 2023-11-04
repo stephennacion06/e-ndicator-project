@@ -1,6 +1,8 @@
+https://github.com/me-no-dev/ESPAsyncWebServer.git
 adafruit/Adafruit SSD1306@^2.5.7
-bblanchon/ArduinoJson@^6.21.2
+ayushsharma82/AsyncElegantOTA@^2.2.7
 denyssene/SimpleKalmanFilter@^0.1.0
-plerup/EspSoftwareSerial@^8.1.0
 https://github.com/tzapu/WiFiManager.git@^2.0.5-bet
+bblanchon/ArduinoJson@^6.21.2
 adafruit/Adafruit GFX Library@^1.11.7
+plerup/EspSoftwareSerial@^8.1.0
