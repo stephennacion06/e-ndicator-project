@@ -15,6 +15,8 @@ void oledDisplay_initialize( void );
 void oledDisplay_irValue(float ir);
 void oledDisplay_showParameters(float voltage, float current, float batterySoh, float batterySoc);
 void oledDisplay_irSetupDisplay(float m_openCircuitVoltageValue, float m_voltageWithLoad, float m_currentWithLoad);
+void oledDisplay_calibrationDisplay(float voltage, float current, float debugValue );
 void oledDisplay_downloadDisplay( void );
 void oledDisplay_CenterTextDisplay( String text );
+void oledDisplay_internalResistanceSetupDisplay( void );
 #endif // OLED_DISPLAY_H

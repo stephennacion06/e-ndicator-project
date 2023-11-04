@@ -3,6 +3,7 @@
 #include <WiFi.h>
 #include <HTTPClient.h>
 #include <ArduinoJson.h>
+#include "oled_display.h"
 
 #define GPRS_SERIAL_BUAD_RATE ( 9600 )
 #define MID_DELAY             ( 2000 )
@@ -56,7 +57,7 @@ void sim800lInterface_gprsSerialInitialize( void )
     {
         // TODO: Update failed sim800l flag 
         DEBUG_PRINT_LN("Error: SIM800L not responding");
-        while (1);
+        oledDisplay_CenterTextDisplay("Sim800l Error");
     }
 }
 

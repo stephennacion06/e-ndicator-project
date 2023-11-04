@@ -11,6 +11,7 @@
 
 float sensors_getVoltage( void );
 float sensors_getCurrentReading( void );
+float sensors_getDebugValue( void );
 void sensors_initializeAllSensors( void );
 void sensors_voltageCurrentTask( void *parameter );
 

@@ -73,6 +73,18 @@ void batteryParameter_initializeSohParam( void )
     m_computedSoh = constrain(m_computedSoh, 0, 100);
 }
 
+void batteryParameter_Calibration( void )
+{
+    while( true )
+    {
+        float voltageReading = sensors_getVoltage();
+        float currentReading = sensors_getCurrentReading();
+        float debugValue = sensors_getDebugValue();
+
+        oledDisplay_calibrationDisplay( voltageReading, currentReading, debugValue );
+    }
+}
+
 void batteryParameter_internalResistanceSetup( void )
 {
     bool irValueValid = false; 
@@ -99,7 +111,7 @@ void batteryParameter_internalResistanceSetup( void )
         oledDisplay_CenterTextDisplay("Release Button");
 
         // Display Internal Resistance
-        m_internalResistance = (m_openCircuitVoltageValue-m_voltageWithLoad)/m_currentWithLoad;
+        m_internalResistance = (m_openCircuitVoltageValue-m_voltageWithLoad)/abs(m_currentWithLoad);
         DEBUG_PRINT("Internal Resistance");
         DEBUG_PRINT_LN(m_internalResistance);
 

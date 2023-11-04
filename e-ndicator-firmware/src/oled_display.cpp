@@ -2,8 +2,13 @@
 #include "utils.h"
 
 #define QUICK_DELAY  ( 30 )
-#define MID_DELAY    ( 1000 )
+#if CALIBRATION_ENABLED == 0
 #define LONG_DELAY   ( 3000 )
+#define MID_DELAY    ( 1000 )
+#else
+#define LONG_DELAY   ( 1000 )
+#define MID_DELAY    ( 500 )
+#endif // CALIBRATION_ENABLED
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 
@@ -11,7 +16,6 @@ Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 static void m_allPixelsDisplay( void );
 static void m_textDisplay( void );
 static void m_invertedTextDisplay( void );
-static void m_internalResistanceSetupDisplay( void );
 /* Private Function Definition */
 
 void m_allPixelsDisplay( void )
@@ -63,7 +67,8 @@ void m_invertedTextDisplay( void )
     delay(LONG_DELAY);
 }
 
-void m_internalResistanceSetupDisplay( void )
+/* Public Function Definition */
+void oledDisplay_internalResistanceSetupDisplay( void )
 {
     display.clearDisplay();
     display.setTextColor(SSD1306_WHITE);
@@ -74,7 +79,6 @@ void m_internalResistanceSetupDisplay( void )
 }
 
 
-/* Public Function Definition */
 void oledDisplay_initialize( void )
 {
     if(!display.begin(SSD1306_SWITCHCAPVCC, SCREEN_ADDRESS))
@@ -90,7 +94,6 @@ void oledDisplay_initialize( void )
     m_allPixelsDisplay();
     m_textDisplay();
     m_invertedTextDisplay();
-    m_internalResistanceSetupDisplay();
 }
 
 void oledDisplay_irValue(float ir)
@@ -164,6 +167,28 @@ void oledDisplay_irSetupDisplay(float m_openCircuitVoltageValue, float m_voltage
     display.println(F(" A"));
 
     display.display();
+}
+
+void oledDisplay_calibrationDisplay(float voltage, float current, float debugValue)
+{
+    display.clearDisplay();
+    display.setTextSize(1.5);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(0,0);
+    
+    display.print(F("Voltage: "));
+    display.print(voltage,2);
+    display.println(F(" V"));
+
+    display.print(F("Current: "));
+    display.print(current,2);
+    display.println(F(" A"));
+
+    display.print(F("Debug Value: "));
+    display.println(debugValue,2);
+    
+    display.display();
+    
 }
 
 void oledDisplay_downloadDisplay( void )

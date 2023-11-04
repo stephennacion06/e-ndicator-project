@@ -42,4 +42,6 @@ float batteryParameter_getSoc( float currentReading, float voltageReading );
 float batteryParameter_getInternalResistance( void );
 void batteryParameter_initializeSocParam( void );
 void batteryParameter_initializeSohParam( void );
+void batteryParameter_Calibration( void );
+
 #endif // BATTERY_PARAMETER_H
